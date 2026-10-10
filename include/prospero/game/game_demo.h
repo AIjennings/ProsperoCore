@@ -55,6 +55,13 @@ struct PowerUp {
     bool active;
 };
 
+struct Building3D {
+    float x, z;
+    float w, d, h;
+    u32 color;
+    u32 window_color;
+};
+
 class ProsperoGame {
 public:
     ProsperoGame();
@@ -75,22 +82,29 @@ private:
     // Drawing primitives (direct into PS5 GDDR6 direct memory)
     void clear(u32 color);
     void drawPixel(int x, int y, u32 color);
+    void drawPixelBlend(int x, int y, u32 color, u8 alpha);
     void drawLine(int x0, int y0, int x1, int y1, u32 color);
+    void drawGlowingLine(int x0, int y0, int x1, int y1, u32 core_color, u32 glow_color);
     void drawCircle(int cx, int cy, int r, u32 color, bool fill = false);
     void drawRect(int x, int y, int w, int h, u32 color, bool fill = false);
     void drawChar(int x, int y, char c, u32 color, int scale = 1);
     void drawText(int x, int y, const std::string& text, u32 color, int scale = 1);
     void drawPolygon(const std::vector<std::pair<float, float>>& pts, u32 color, bool fill = false);
+    void drawFilledTriangle(int x0, int y0, int x1, int y1, int x2, int y2, u32 color);
 
     // Render components
+    void renderCosmicNebula();
+    void renderCyberpunkCity(float dt);
     void renderStarfield();
     void renderPlayer();
+    void renderShieldHexDome();
     void renderEnemies();
     void renderAsteroids();
     void renderLasers();
     void renderParticles();
     void renderPowerUps();
     void renderHud();
+    void renderAudioSpectrum();
     void renderControllerWidget(int x, int y);
 
     // Framebuffer & Dimensions
@@ -118,7 +132,11 @@ private:
     float m_player_vx{0.0f};
     float m_player_vy{0.0f};
     float m_player_angle{0.0f};
+    float m_player_roll{0.0f};
     float m_laser_cooldown{0.0f};
+    float m_city_scroll{0.0f};
+    float m_audio_time{0.0f};
+    float m_nebula_timer{0.0f};
 
     // DualSense input cache
     u8 m_left_stick_x{128};
@@ -135,6 +153,7 @@ private:
     std::vector<Enemy> m_enemies;
     std::vector<Asteroid> m_asteroids;
     std::vector<PowerUp> m_powerups;
+    std::vector<Building3D> m_buildings;
 
     float m_enemy_spawn_timer{0.0f};
     float m_asteroid_spawn_timer{0.0f};

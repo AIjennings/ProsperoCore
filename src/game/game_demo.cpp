@@ -191,18 +191,38 @@ void ProsperoGame::resetGame() {
     m_player_vx = 0.0f;
     m_player_vy = 0.0f;
     m_player_angle = 0.0f;
+    m_player_roll = 0.0f;
     m_score = 0;
     m_shield = 100.0f;
     m_boost = 100.0f;
     m_wave = 1;
     m_game_over = false;
     m_screen_shake = 0.0f;
+    m_city_scroll = 0.0f;
+    m_audio_time = 0.0f;
+    m_nebula_timer = 0.0f;
 
     m_lasers.clear();
     m_enemies.clear();
     m_asteroids.clear();
     m_particles.clear();
     m_powerups.clear();
+    m_buildings.clear();
+
+    // Generate 3D Cyberpunk Skyscrapers
+    for (int i = 0; i < 28; ++i) {
+        Building3D b{};
+        float side = (i % 2 == 0) ? -1.0f : 1.0f;
+        b.x = side * (260.0f + (rand() % 360));
+        b.z = 180.0f + (i * 80.0f);
+        b.w = 80.0f + (rand() % 70);
+        b.d = 90.0f + (rand() % 90);
+        b.h = 200.0f + (rand() % 260);
+        u32 neons[] = { 0xFF00F0FF, 0xFFFF007F, 0xFF8B5CF6, 0xFFF59E0B, 0xFF10B981 };
+        b.color = 0xFF0B132B; // Midnight high-tech steel
+        b.window_color = neons[rand() % 5];
+        m_buildings.push_back(b);
+    }
 
     // Initial enemies
     for (int i = 0; i < 6; ++i) {
@@ -295,9 +315,25 @@ void ProsperoGame::update(float dt) {
     m_player_x = std::clamp(m_player_x, 40.0f, m_width - 40.0f);
     m_player_y = std::clamp(m_player_y, 60.0f, m_height - 50.0f);
 
-    // Tilt angle
+    // Tilt angle and smooth 3D banking roll
     float target_angle = (m_player_vx / 500.0f) * 0.45f;
     m_player_angle += (target_angle - m_player_angle) * 8.0f * dt;
+    float target_roll = (m_player_vx / 500.0f) * 0.85f;
+    m_player_roll += (target_roll - m_player_roll) * 10.0f * dt;
+
+    m_city_scroll += (m_is_boosting ? 950.0f : 420.0f) * dt;
+    m_nebula_timer += dt * 0.4f;
+    m_audio_time += dt * 6.0f;
+
+    // Update 3D buildings
+    float city_speed = m_is_boosting ? 950.0f : 420.0f;
+    for (auto& b : m_buildings) {
+        b.z -= city_speed * dt;
+        if (b.z < 80.0f) {
+            b.z += 28.0f * 80.0f;
+            b.h = 200.0f + (rand() % 260);
+        }
+    }
 
     // Engine thruster particles
     float thruster_speed = m_is_boosting ? 350.0f : 180.0f;
@@ -592,6 +628,19 @@ void ProsperoGame::drawPixel(int x, int y, u32 color) {
     m_framebuffer[y * m_width + x] = color;
 }
 
+void ProsperoGame::drawPixelBlend(int x, int y, u32 color, u8 alpha) {
+    if (x < 0 || x >= static_cast<int>(m_width) || y < 0 || y >= static_cast<int>(m_height)) return;
+    u32* dst = &m_framebuffer[y * m_width + x];
+    u32 bg = *dst;
+    u32 rb_bg = bg & 0x00FF00FF;
+    u32 g_bg  = bg & 0x0000FF00;
+    u32 rb_fg = color & 0x00FF00FF;
+    u32 g_fg  = color & 0x0000FF00;
+    u32 rb = (rb_bg + (((rb_fg - rb_bg) * alpha) >> 8)) & 0x00FF00FF;
+    u32 g  = (g_bg  + (((g_fg  - g_bg)  * alpha) >> 8)) & 0x0000FF00;
+    *dst = 0xFF000000 | rb | g;
+}
+
 void ProsperoGame::drawLine(int x0, int y0, int x1, int y1, u32 color) {
     int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
     int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
@@ -604,6 +653,14 @@ void ProsperoGame::drawLine(int x0, int y0, int x1, int y1, u32 color) {
         if (e2 >= dy) { err += dy; x0 += sx; }
         if (e2 <= dx) { err += dx; y0 += sy; }
     }
+}
+
+void ProsperoGame::drawGlowingLine(int x0, int y0, int x1, int y1, u32 core_color, u32 glow_color) {
+    drawLine(x0 - 2, y0, x1 - 2, y1, glow_color);
+    drawLine(x0 + 2, y0, x1 + 2, y1, glow_color);
+    drawLine(x0 - 1, y0, x1 - 1, y1, glow_color);
+    drawLine(x0 + 1, y0, x1 + 1, y1, glow_color);
+    drawLine(x0, y0, x1, y1, core_color);
 }
 
 void ProsperoGame::drawRect(int x, int y, int w, int h, u32 color, bool fill) {
@@ -653,6 +710,33 @@ void ProsperoGame::drawCircle(int cx, int cy, int r, u32 color, bool fill) {
     }
 }
 
+void ProsperoGame::drawFilledTriangle(int x0, int y0, int x1, int y1, int x2, int y2, u32 color) {
+    int min_x = std::max(0, std::min({x0, x1, x2}));
+    int max_x = std::min(static_cast<int>(m_width) - 1, std::max({x0, x1, x2}));
+    int min_y = std::max(0, std::min({y0, y1, y2}));
+    int max_y = std::min(static_cast<int>(m_height) - 1, std::max({y0, y1, y2}));
+    if (min_x > max_x || min_y > max_y) return;
+
+    auto edge = [](int ax, int ay, int bx, int by, int px, int py) -> int {
+        return (px - ax) * (by - ay) - (py - ay) * (bx - ax);
+    };
+
+    int area = edge(x0, y0, x1, y1, x2, y2);
+    if (area == 0) return;
+    bool ccw = (area > 0);
+
+    for (int y = min_y; y <= max_y; ++y) {
+        for (int x = min_x; x <= max_x; ++x) {
+            int w0 = edge(x1, y1, x2, y2, x, y);
+            int w1 = edge(x2, y2, x0, y0, x, y);
+            int w2 = edge(x0, y0, x1, y1, x, y);
+            if (ccw ? (w0 >= 0 && w1 >= 0 && w2 >= 0) : (w0 <= 0 && w1 <= 0 && w2 <= 0)) {
+                m_framebuffer[y * m_width + x] = color;
+            }
+        }
+    }
+}
+
 void ProsperoGame::drawChar(int x, int y, char c, u32 color, int scale) {
     if (c < 32 || c > 126) return;
     const u8* glyph = s_font8x8[c - 32];
@@ -691,6 +775,90 @@ void ProsperoGame::drawPolygon(const std::vector<std::pair<float, float>>& pts, 
     }
 }
 
+void ProsperoGame::renderCosmicNebula() {
+    float t = m_nebula_timer;
+    float sin_t = sinf(t) * 0.5f + 0.5f;
+    float cos_t = cosf(t * 0.7f) * 0.5f + 0.5f;
+
+    for (u32 y = 0; y < m_height; ++y) {
+        float ny = static_cast<float>(y) / m_height;
+        u8 base_r = static_cast<u8>(8 + ny * 18 + sin_t * 12);
+        u8 base_g = static_cast<u8>(8 + ny * 10);
+        u8 base_b = static_cast<u8>(28 + ny * 35 + cos_t * 20);
+
+        u32 line_color = 0xFF000000 | (base_r << 16) | (base_g << 8) | base_b;
+        u32* row = &m_framebuffer[y * m_width];
+        std::fill_n(row, m_width, line_color);
+    }
+}
+
+void ProsperoGame::renderCyberpunkCity(float dt) {
+    float horizon_y = m_height * 0.48f;
+
+    // 3D Perspective Ground Grid (Cyan/Magenta neon streets)
+    for (int gz = 16; gz >= 2; --gz) {
+        float z = gz * 90.0f - fmodf(m_city_scroll, 90.0f);
+        if (z < 25.0f) continue;
+        int py = static_cast<int>(horizon_y + (7000.0f / z));
+        if (py >= static_cast<int>(m_height)) continue;
+        u8 alpha = static_cast<u8>(std::clamp(255.0f - (z * 0.14f), 15.0f, 180.0f));
+        u32 grid_color = 0xFF000000 | (static_cast<u8>(alpha * 0.2f) << 16) | (static_cast<u8>(alpha * 0.8f) << 8) | alpha;
+        drawLine(0, py, m_width, py, grid_color);
+    }
+
+    // Grid vertical lines converging to horizon center
+    for (int gx = -8; gx <= 8; ++gx) {
+        int x_bottom = static_cast<int>((m_width / 2.0f) + gx * 180.0f);
+        int x_horizon = static_cast<int>((m_width / 2.0f) + gx * 15.0f);
+        drawLine(x_horizon, static_cast<int>(horizon_y), x_bottom, m_height, 0xFF003344);
+    }
+
+    // 3D Skyscrapers
+    for (const auto& b : m_buildings) {
+        if (b.z < 80.0f || b.z > 2200.0f) continue;
+
+        float f = 450.0f;
+        float x0 = (b.x / b.z) * f + (m_width / 2.0f);
+        float x1 = ((b.x + b.w) / b.z) * f + (m_width / 2.0f);
+        float y_base = horizon_y + (5500.0f / b.z);
+        float y_top = y_base - (b.h * f / b.z);
+
+        if (x1 < 0 || x0 >= m_width || y_top >= m_height) continue;
+
+        int bx0 = static_cast<int>(x0);
+        int bx1 = static_cast<int>(x1);
+        int by_top = static_cast<int>(std::max(0.0f, y_top));
+        int by_base = static_cast<int>(std::min(static_cast<float>(m_height), y_base));
+
+        int bw = bx1 - bx0;
+        int bh = by_base - by_top;
+        if (bw > 2 && bh > 4) {
+            // Draw dark building silhouette
+            drawRect(bx0, by_top, bw, bh, b.color, true);
+            drawRect(bx0, by_top, bw, bh, b.window_color, false);
+
+            // Glowing rooftop beacon
+            int tip_x = bx0 + bw / 2;
+            int tip_y = by_top - 10;
+            drawLine(tip_x, by_top, tip_x, tip_y, 0xFFFFFFFF);
+            drawCircle(tip_x, tip_y, 2, b.window_color, true);
+
+            // Window lights matrix
+            if (b.z < 900.0f && bw > 16) {
+                int cols = std::min(8, bw / 8);
+                int rows = std::min(14, bh / 12);
+                for (int r = 1; r < rows; ++r) {
+                    for (int c = 1; c < cols; ++c) {
+                        if ((r + c + (int)(b.x * 0.1f)) % 3 == 0) {
+                            drawRect(bx0 + c * 8, by_top + r * 12, 3, 5, b.window_color, true);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 void ProsperoGame::renderStarfield() {
     for (const auto& s : m_stars) {
         float px = (s.x / s.z) * 400.0f + (m_width / 2.0f);
@@ -708,7 +876,9 @@ void ProsperoGame::renderStarfield() {
 void ProsperoGame::renderPlayer() {
     float cx = m_player_x;
     float cy = m_player_y;
-    float ang = m_player_angle;
+    float roll = m_player_roll;
+    float pitch = m_player_vy * 0.0004f;
+    float yaw = m_player_angle;
 
     // Apply screen shake
     if (m_screen_shake > 0.5f) {
@@ -716,47 +886,121 @@ void ProsperoGame::renderPlayer() {
         cy += ((rand() % 100) - 50) / 50.0f * m_screen_shake;
     }
 
-    auto rotate = [&](float x, float y) -> std::pair<float, float> {
-        float rx = x * cosf(ang) - y * sinf(ang);
-        float ry = x * sinf(ang) + y * cosf(ang);
-        return {cx + rx, cy + ry};
+    // 3D rotation and projection lambda
+    auto project3D = [&](float x, float y, float z) -> std::pair<int, int> {
+        // Roll around Z
+        float cosR = cosf(roll), sinR = sinf(roll);
+        float x1 = x * cosR - y * sinR;
+        float y1 = x * sinR + y * cosR;
+        float z1 = z;
+
+        // Pitch around X
+        float cosP = cosf(pitch), sinP = sinf(pitch);
+        float y2 = y1 * cosP - z1 * sinP;
+        float z2 = y1 * sinP + z1 * cosP;
+
+        // Yaw around Y
+        float cosY = cosf(yaw), sinY = sinf(yaw);
+        float x3 = x1 * cosY + z2 * sinY;
+        float y3 = y2;
+
+        return { static_cast<int>(cx + x3), static_cast<int>(cy + y3) };
     };
 
-    // Sleek 3D Starfighter delta frame
-    std::vector<std::pair<float, float>> hull = {
-        rotate(0.0f, -28.0f),   // Nose
-        rotate(12.0f, -10.0f),  // Right cockpit
-        rotate(26.0f, 18.0f),   // Right wingtip
-        rotate(14.0f, 16.0f),   // Right engine
-        rotate(0.0f, 22.0f),    // Center tail
-        rotate(-14.0f, 16.0f),  // Left engine
-        rotate(-26.0f, 18.0f),  // Left wingtip
-        rotate(-12.0f, -10.0f), // Left cockpit
-    };
+    // 3D Vertex Definition
+    auto v_nose       = project3D(0.0f, -4.0f, -32.0f);
+    auto v_cockpit    = project3D(0.0f, 10.0f, -10.0f);
+    auto v_canopy_end = project3D(0.0f, 4.0f, 6.0f);
+    auto v_tail       = project3D(0.0f, 6.0f, 24.0f);
+    auto v_wing_l     = project3D(-34.0f, 0.0f, 16.0f);
+    auto v_wing_r     = project3D(34.0f, 0.0f, 16.0f);
+    auto v_root_l     = project3D(-14.0f, 2.0f, 20.0f);
+    auto v_root_r     = project3D(14.0f, 2.0f, 20.0f);
+    auto v_fin_l      = project3D(-10.0f, 18.0f, 22.0f);
+    auto v_fin_r      = project3D(10.0f, 18.0f, 22.0f);
 
-    drawPolygon(hull, 0xFF00FFCC); // Vibrant PS5 Cyan
+    // Dynamic metallic lighting based on roll angle
+    float light_dot = cosf(roll + 0.4f);
+    u8 shd1 = static_cast<u8>(std::clamp(120.0f + light_dot * 100.0f, 40.0f, 255.0f));
+    u8 shd2 = static_cast<u8>(std::clamp(120.0f - light_dot * 100.0f, 40.0f, 255.0f));
+    u32 color_hull_r = 0xFF000000 | (static_cast<u8>(shd1 * 0.1f) << 16) | (static_cast<u8>(shd1 * 0.75f) << 8) | shd1;
+    u32 color_hull_l = 0xFF000000 | (static_cast<u8>(shd2 * 0.1f) << 16) | (static_cast<u8>(shd2 * 0.75f) << 8) | shd2;
 
-    // Cockpit Canopy (Glowing Gold)
-    std::vector<std::pair<float, float>> canopy = {
-        rotate(0.0f, -16.0f),
-        rotate(6.0f, -2.0f),
-        rotate(0.0f, 8.0f),
-        rotate(-6.0f, -2.0f),
-    };
-    drawPolygon(canopy, 0xFFFFD700);
+    // 1. Shaded Wings (Under/Upper facets)
+    drawFilledTriangle(v_nose.first, v_nose.second, v_cockpit.first, v_cockpit.second, v_wing_l.first, v_wing_l.second, color_hull_l);
+    drawFilledTriangle(v_nose.first, v_nose.second, v_cockpit.first, v_cockpit.second, v_wing_r.first, v_wing_r.second, color_hull_r);
+    drawFilledTriangle(v_cockpit.first, v_cockpit.second, v_wing_l.first, v_wing_l.second, v_root_l.first, v_root_l.second, color_hull_l);
+    drawFilledTriangle(v_cockpit.first, v_cockpit.second, v_wing_r.first, v_wing_r.second, v_root_r.first, v_root_r.second, color_hull_r);
 
-    // Twin Wing Cannons
-    auto rc1 = rotate(18.0f, 0.0f);
-    auto rc2 = rotate(18.0f, 14.0f);
-    auto lc1 = rotate(-18.0f, 0.0f);
-    auto lc2 = rotate(-18.0f, 14.0f);
-    drawLine(static_cast<int>(rc1.first), static_cast<int>(rc1.second), static_cast<int>(rc2.first), static_cast<int>(rc2.second), 0xFFFFFFFF);
-    drawLine(static_cast<int>(lc1.first), static_cast<int>(lc1.second), static_cast<int>(lc2.first), static_cast<int>(lc2.second), 0xFFFFFFFF);
+    // 2. High-Tech Glass Canopy (Reflective Gold)
+    drawFilledTriangle(v_nose.first, v_nose.second, v_cockpit.first, v_cockpit.second, v_canopy_end.first, v_canopy_end.second, 0xFFFFD700);
 
-    // Shield forcefield bubble (draw when hit or low)
-    if (m_screen_shake > 2.0f || m_shield < 40.0f) {
-        u32 shield_color = m_shield > 30.0f ? 0xFF00BFFF : 0xFFFF3333;
-        drawCircle(static_cast<int>(cx), static_cast<int>(cy), 36, shield_color);
+    // 3. Twin Vertical Stabilizer Fins
+    drawFilledTriangle(v_root_l.first, v_root_l.second, v_tail.first, v_tail.second, v_fin_l.first, v_fin_l.second, 0xFF0284C7);
+    drawFilledTriangle(v_root_r.first, v_root_r.second, v_tail.first, v_tail.second, v_fin_r.first, v_fin_r.second, 0xFF38BDF8);
+
+    // 4. Fine Neon Accent Outlines
+    drawLine(v_nose.first, v_nose.second, v_wing_l.first, v_wing_l.second, 0xFF00FFFF);
+    drawLine(v_nose.first, v_nose.second, v_wing_r.first, v_wing_r.second, 0xFF00FFFF);
+    drawLine(v_wing_l.first, v_wing_l.second, v_root_l.first, v_root_l.second, 0xFF38BDF8);
+    drawLine(v_wing_r.first, v_wing_r.second, v_root_r.first, v_root_r.second, 0xFF38BDF8);
+    drawLine(v_cockpit.first, v_cockpit.second, v_tail.first, v_tail.second, 0xFFFFFFFF);
+
+    // 5. Twin Wing Cannons with glowing tips
+    auto c_left_tip = project3D(-20.0f, -2.0f, -6.0f);
+    auto c_left_base = project3D(-20.0f, -2.0f, 12.0f);
+    auto c_right_tip = project3D(20.0f, -2.0f, -6.0f);
+    auto c_right_base = project3D(20.0f, -2.0f, 12.0f);
+    drawLine(c_left_base.first, c_left_base.second, c_left_tip.first, c_left_tip.second, 0xFFE2E8F0);
+    drawLine(c_right_base.first, c_right_base.second, c_right_tip.first, c_right_tip.second, 0xFFE2E8F0);
+    drawCircle(c_left_tip.first, c_left_tip.second, 2, 0xFF00F0FF, true);
+    drawCircle(c_right_tip.first, c_right_tip.second, 2, 0xFF00F0FF, true);
+
+    // 6. Dual Engine Nozzles (Pulsing Plasma Exhaust Core)
+    auto eng_l = project3D(-12.0f, 0.0f, 22.0f);
+    auto eng_r = project3D(12.0f, 0.0f, 22.0f);
+    int flame_len = m_is_boosting ? 26 : 14;
+    u32 flame_color = m_is_boosting ? 0xFF00F0FF : 0xFFFF6600;
+    auto flame_l = project3D(-12.0f, 0.0f, 22.0f + flame_len);
+    auto flame_r = project3D(12.0f, 0.0f, 22.0f + flame_len);
+    drawGlowingLine(eng_l.first, eng_l.second, flame_l.first, flame_l.second, 0xFFFFFFFF, flame_color);
+    drawGlowingLine(eng_r.first, eng_r.second, flame_r.first, flame_r.second, 0xFFFFFFFF, flame_color);
+
+    // 7. Flashing Strobe Wingtip Beacons
+    static int s_beacon_tick = 0;
+    s_beacon_tick++;
+    if ((s_beacon_tick / 15) % 2 == 0) {
+        drawCircle(v_wing_l.first, v_wing_l.second, 3, 0xFFFF0055, true); // Red Port Beacon
+        drawCircle(v_wing_r.first, v_wing_r.second, 3, 0xFF00FF66, true); // Green Starboard Beacon
+    }
+
+    // 8. Hexagonal Energy Shield Dome
+    renderShieldHexDome();
+}
+
+void ProsperoGame::renderShieldHexDome() {
+    if (m_shield <= 0.0f) return;
+
+    float cx = m_player_x;
+    float cy = m_player_y;
+    float r = 44.0f;
+    float pulse = sinf(m_audio_time * 2.0f) * 2.0f;
+    r += pulse;
+
+    u32 shield_color = (m_shield > 40.0f) ? 0xFF00F0FF : 0xFFFF3366;
+    if (m_screen_shake > 1.0f) {
+        shield_color = 0xFFFFFFFF;
+    }
+
+    std::vector<std::pair<float, float>> hex_pts;
+    for (int i = 0; i < 6; ++i) {
+        float a = (i * 3.14159265f / 3.0f) + (m_player_angle * 0.5f);
+        hex_pts.push_back({cx + cosf(a) * r, cy + sinf(a) * (r * 0.75f)});
+    }
+
+    drawPolygon(hex_pts, shield_color, false);
+    for (int i = 0; i < 6; ++i) {
+        drawLine(static_cast<int>(cx), static_cast<int>(cy), static_cast<int>(hex_pts[i].first), static_cast<int>(hex_pts[i].second), shield_color & 0x66FFFFFF);
     }
 }
 
@@ -764,26 +1008,36 @@ void ProsperoGame::renderEnemies() {
     for (const auto& e : m_enemies) {
         if (!e.active) continue;
 
-        // Enemy Raider ship (Red/Magenta)
-        std::vector<std::pair<float, float>> ship = {
-            {e.x, e.y + 18.0f},
-            {e.x + 18.0f, e.y - 12.0f},
-            {e.x + 8.0f, e.y - 6.0f},
-            {e.x, e.y - 14.0f},
-            {e.x - 8.0f, e.y - 6.0f},
-            {e.x - 18.0f, e.y - 12.0f},
-        };
-        drawPolygon(ship, 0xFFFF0055);
+        int ex = static_cast<int>(e.x);
+        int ey = static_cast<int>(e.y);
 
-        // Core light
-        drawCircle(static_cast<int>(e.x), static_cast<int>(e.y), 4, 0xFFFFAA00, true);
+        // Different enemy classes have distinctive 3D faceted geometry
+        if (e.type == 0) { // Drone: Fast Crimson Interceptor
+            drawFilledTriangle(ex, ey + 18, ex - 16, ey - 10, ex, ey - 4, 0xFFBE123C);
+            drawFilledTriangle(ex, ey + 18, ex + 16, ey - 10, ex, ey - 4, 0xFFE11D48);
+            drawLine(ex, ey + 18, ex - 16, ey - 10, 0xFFFF0055);
+            drawLine(ex, ey + 18, ex + 16, ey - 10, 0xFFFF0055);
+            drawCircle(ex, ey, 3, 0xFFFDE047, true);
+        } else if (e.type == 1) { // Stealth Raider: Sharp Violet Wing
+            drawFilledTriangle(ex, ey + 20, ex - 22, ey - 8, ex, ey - 12, 0xFF6D28D9);
+            drawFilledTriangle(ex, ey + 20, ex + 22, ey - 8, ex, ey - 12, 0xFF8B5CF6);
+            drawLine(ex, ey + 20, ex - 22, ey - 8, 0xFFA78BFA);
+            drawLine(ex, ey + 20, ex + 22, ey - 8, 0xFFA78BFA);
+            drawCircle(ex, ey + 2, 4, 0xFF38BDF8, true);
+        } else { // Heavy Dreadnought: Armored Hexagon Gunship
+            drawFilledTriangle(ex, ey + 22, ex - 24, ey - 4, ex, ey - 16, 0xFFB45309);
+            drawFilledTriangle(ex, ey + 22, ex + 24, ey - 4, ex, ey - 16, 0xFFD97706);
+            drawFilledTriangle(ex - 24, ey - 4, ex - 14, ey - 16, ex, ey - 16, 0xFFF59E0B);
+            drawFilledTriangle(ex + 24, ey - 4, ex + 14, ey - 16, ex, ey - 16, 0xFFFBBF24);
+            drawCircle(ex, ey, 5, 0xFFEF4444, true);
+        }
 
         // Health bar
-        int bar_w = 30;
+        int bar_w = 32;
         int bar_h = 3;
         int filled = static_cast<int>((e.hp / e.max_hp) * bar_w);
-        drawRect(static_cast<int>(e.x - bar_w / 2), static_cast<int>(e.y - 22), bar_w, bar_h, 0xFF444444, true);
-        drawRect(static_cast<int>(e.x - bar_w / 2), static_cast<int>(e.y - 22), filled, bar_h, 0xFF00FF66, true);
+        drawRect(ex - bar_w / 2, ey - 22, bar_w, bar_h, 0xFF1F2937, true);
+        drawRect(ex - bar_w / 2, ey - 22, filled, bar_h, (e.hp > 15.0f ? 0xFF10B981 : 0xFFEF4444), true);
     }
 }
 
@@ -805,16 +1059,12 @@ void ProsperoGame::renderAsteroids() {
 void ProsperoGame::renderLasers() {
     for (const auto& l : m_lasers) {
         if (!l.active) continue;
+        int lx = static_cast<int>(l.x);
+        int ly = static_cast<int>(l.y);
         if (l.is_enemy) {
-            drawLine(static_cast<int>(l.x), static_cast<int>(l.y),
-                     static_cast<int>(l.x), static_cast<int>(l.y + 16), 0xFFFF2222);
-            drawPixel(static_cast<int>(l.x - 1), static_cast<int>(l.y + 8), 0xFFFF8888);
-            drawPixel(static_cast<int>(l.x + 1), static_cast<int>(l.y + 8), 0xFFFF8888);
+            drawGlowingLine(lx, ly, lx, ly + 16, 0xFFFFFFFF, 0xFFFF0055);
         } else {
-            drawLine(static_cast<int>(l.x), static_cast<int>(l.y),
-                     static_cast<int>(l.x), static_cast<int>(l.y - 18), 0xFF00FFFF);
-            drawPixel(static_cast<int>(l.x - 1), static_cast<int>(l.y - 9), 0xFFFFFFFF);
-            drawPixel(static_cast<int>(l.x + 1), static_cast<int>(l.y - 9), 0xFFFFFFFF);
+            drawGlowingLine(lx, ly, lx, ly - 18, 0xFFFFFFFF, 0xFF00F0FF);
         }
     }
 }
@@ -948,6 +1198,32 @@ void ProsperoGame::renderHud() {
     }
 }
 
+void ProsperoGame::renderAudioSpectrum() {
+    int start_x = 24;
+    int start_y = 150;
+    int bar_width = 8;
+    int gap = 4;
+    int num_bars = 16;
+
+    drawText(start_x, start_y - 14, "TEMPEST 3D AUDIO SPECTRUM", 0xFF9CA3AF);
+
+    for (int i = 0; i < num_bars; ++i) {
+        float freq = (i + 1) * 1.7f;
+        float h_norm = sinf(m_audio_time * 6.0f + freq) * 0.4f + 
+                       cosf(m_audio_time * 11.0f + i * 0.5f) * 0.3f + 0.35f;
+        h_norm = std::clamp(h_norm, 0.05f, 1.0f);
+        int bar_h = static_cast<int>(h_norm * 32.0f);
+
+        int bx = start_x + i * (bar_width + gap);
+        int by = start_y + (32 - bar_h);
+
+        u32 color = (i < 5) ? 0xFF00F0FF : ((i < 11) ? 0xFF818CF8 : 0xFFF43F5E);
+        drawRect(bx, by, bar_width, bar_h, color, true);
+        // Glowing peak indicator
+        drawRect(bx, by - 2, bar_width, 1, 0xFFFFFFFF, true);
+    }
+}
+
 void ProsperoGame::dispatchGpuCommands() {
     // Generate real AMD RDNA2 PM4 Type-3 command stream
     std::vector<u32> pm4_packets = {
@@ -966,26 +1242,38 @@ void ProsperoGame::dispatchGpuCommands() {
 }
 
 void ProsperoGame::render() {
-    // Gradient dark cosmic background
-    for (u32 y = 0; y < m_height; ++y) {
-        float factor = static_cast<float>(y) / m_height;
-        u8 r = static_cast<u8>(8.0f + factor * 14.0f);
-        u8 g = static_cast<u8>(10.0f + factor * 12.0f);
-        u8 b = static_cast<u8>(22.0f + factor * 30.0f);
-        u32 line_color = 0xFF000000 | (r << 16) | (g << 8) | b;
-        for (u32 x = 0; x < m_width; ++x) {
-            m_framebuffer[y * m_width + x] = line_color;
-        }
-    }
+    // 1. Cosmic nebula background with real-time plasma harmonics
+    renderCosmicNebula();
 
+    // 2. 3D Cyberpunk Skyscraper City trench run with perspective ground grid
+    renderCyberpunkCity(0.016f);
+
+    // 3. 3D Warp Starfield
     renderStarfield();
+
+    // 4. Asteroids with polygon shards
     renderAsteroids();
+
+    // 5. Shaded 3D Enemy Gunships
     renderEnemies();
+
+    // 6. Glowing PowerUps
     renderPowerUps();
+
+    // 7. Glowing neon plasma lasers
     renderLasers();
+
+    // 8. Particle FX (thrusters, explosions, sparks)
     renderParticles();
+
+    // 9. Faceted 3D Starfighter with banking roll physics & shield dome
     renderPlayer();
+
+    // 10. Next-Gen PS5 HUD telemetry
     renderHud();
+
+    // 11. Tempest 3D Audio spectrum visualizer
+    renderAudioSpectrum();
 }
 
 void ProsperoGame::run() {

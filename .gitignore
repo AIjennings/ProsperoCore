@@ -8,3 +8,4 @@ bin/
 *.pdb
 *.ilk
 .vs/
+*.log

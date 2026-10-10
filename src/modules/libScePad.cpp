@@ -95,7 +95,16 @@ void LibScePad::pollHostInput(ScePadData& pad) {
         }
     }
 
-    // Keyboard Fallback / Overlay
+    // Keyboard Fallback / Overlay: only process if emulator window has focus
+    HWND fg = GetForegroundWindow();
+    DWORD fg_pid = 0;
+    if (fg) GetWindowThreadProcessId(fg, &fg_pid);
+    bool has_focus = (fg == nullptr) || (fg_pid == GetCurrentProcessId());
+
+    if (!has_focus) {
+        return;
+    }
+
     auto isDown = [](int vk) -> bool {
         return (GetAsyncKeyState(vk) & 0x8000) != 0;
     };
@@ -136,7 +145,7 @@ void LibScePad::pollHostInput(ScePadData& pad) {
         pad.buttons |= SCE_PAD_L2;
         pad.analog_l2 = 255;
     }
-    if (isDown(VK_ESCAPE) || isDown('Q')) {
+    if (isDown(VK_ESCAPE)) {
         pad.buttons |= SCE_PAD_OPTIONS;
     }
 }

@@ -47,7 +47,7 @@ bool LibSceVideoOut::openDisplayWindow(u32 width, u32 height, const std::string&
     HWND hwnd = CreateWindowA(
         "ProsperoVideoOutWindow",
         m_base_title.c_str(),
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE,
         pos_x, pos_y,
         wr.right - wr.left, wr.bottom - wr.top,
         nullptr, nullptr,
@@ -56,7 +56,7 @@ bool LibSceVideoOut::openDisplayWindow(u32 width, u32 height, const std::string&
     );
 
     if (!hwnd) {
-        PROSPERO_LOG_ERROR("VIDEO_OUT", "Failed to create Win32 display window");
+        PROSPERO_LOG_ERROR("VIDEO_OUT", "Failed to create Win32 display window: " << GetLastError());
         return false;
     }
 
@@ -64,8 +64,11 @@ bool LibSceVideoOut::openDisplayWindow(u32 width, u32 height, const std::string&
     m_hdc = GetDC(hwnd);
     m_window_open = true;
 
-    ShowWindow(hwnd, SW_SHOW);
+    ShowWindow(hwnd, SW_SHOWNORMAL);
     UpdateWindow(hwnd);
+    SetWindowPos(hwnd, HWND_TOP, pos_x, pos_y, wr.right - wr.left, wr.bottom - wr.top, SWP_SHOWWINDOW);
+    SetForegroundWindow(hwnd);
+    BringWindowToTop(hwnd);
 
     PROSPERO_LOG_INFO("VIDEO_OUT", "Opened display window (" << m_fb_width << "x" << m_fb_height << ") for PS5 video presentation");
     return true;

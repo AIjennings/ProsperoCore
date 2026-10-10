@@ -24,6 +24,10 @@ public:
 
     void dumpStats() const;
 
+    // Virtual File System (VFS)
+    void mount(const std::string& guest_prefix, const std::string& host_path);
+    std::string resolvePath(const std::string& guest_path) const;
+
 private:
     SyscallDispatcher() = default;
 
@@ -34,6 +38,9 @@ private:
     };
 
     std::unordered_map<u32, SyscallEntry> m_syscalls;
+    std::unordered_map<std::string, std::string> m_mounts;
+    std::unordered_map<int, void*> m_open_files;
+    int m_next_fd{10};
 };
 
 } // namespace prospero::kernel

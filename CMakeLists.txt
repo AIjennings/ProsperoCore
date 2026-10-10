@@ -29,6 +29,9 @@ set(PROSPERO_CORE_SOURCES
     src/modules/libSceVideoOut.cpp
     src/modules/libScePad.cpp
     src/modules/libSceSysmodule.cpp
+    src/modules/libSceUserService.cpp
+    src/modules/libSceSystemService.cpp
+    src/modules/libSceAudioOut.cpp
     src/gpu/command_processor.cpp
     src/gpu/vulkan_backend.cpp
     src/game/game_demo.cpp

@@ -3,6 +3,9 @@
 #include "prospero/modules/libSceVideoOut.h"
 #include "prospero/modules/libScePad.h"
 #include "prospero/modules/libSceSysmodule.h"
+#include "prospero/modules/libSceUserService.h"
+#include "prospero/modules/libSceSystemService.h"
+#include "prospero/modules/libSceAudioOut.h"
 #include "prospero/common/logging.h"
 #include <iostream>
 #include <iomanip>
@@ -27,6 +30,18 @@ bool ModuleManager::init() {
     auto sysmod = std::make_shared<LibSceSysmodule>();
     sysmod->init();
     registerModule(sysmod);
+
+    auto user = std::make_shared<LibSceUserService>();
+    user->init();
+    registerModule(user);
+
+    auto syssvc = std::make_shared<LibSceSystemService>();
+    syssvc->init();
+    registerModule(syssvc);
+
+    auto audio = std::make_shared<LibSceAudioOut>();
+    audio->init();
+    registerModule(audio);
 
     PROSPERO_LOG_INFO("MODULE", "Registered " << m_modules.size() << " core HLE modules with " 
                       << m_nid_to_module.size() << " total exported NIDs");
@@ -63,13 +78,15 @@ std::string ModuleManager::resolveName(nid_t nid) const {
 u64 ModuleManager::callNid(nid_t nid, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     auto it = m_nid_to_module.find(nid);
     if (it == m_nid_to_module.end()) {
-        PROSPERO_LOG_WARN("MODULE", "Unresolved NID: 0x" << std::hex << nid 
-                          << " (" << NidDatabase::instance().getName(nid) << ")" << std::dec);
-        return static_cast<u64>(SCE_KERNEL_ERROR_ENOSYS);
+        std::string resolved_name = NidDatabase::instance().getName(nid);
+        PROSPERO_LOG_WARN("HLE_STUB", "Unhandled NID: 0x" << std::hex << nid 
+                          << " (" << resolved_name << ") [Args: 0x" << a1 << ", 0x" << a2 
+                          << ", 0x" << a3 << ", 0x" << a4 << "] -> Returning SCE_OK fallback");
+        return SCE_OK;
     }
 
     auto* exp = it->second->findExport(nid);
-    if (!exp) return static_cast<u64>(SCE_KERNEL_ERROR_ENOSYS);
+    if (!exp) return SCE_OK;
 
     exp->call_count++;
     PROSPERO_LOG_INFO("HLE_CALL", exp->name << "(0x" << std::hex << a1 << ", 0x" << a2 

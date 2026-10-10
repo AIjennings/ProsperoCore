@@ -203,12 +203,45 @@ int main(int argc, char* argv[]) {
             path = "ps5_game.elf";
         }
 
-        PROSPERO_LOG_INFO("RUNNER", "Loading executable: " << path);
+        std::string binary_path = path;
+        std::string game_dir = ".";
+
+        DWORD attr = GetFileAttributesA(path.c_str());
+        if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY)) {
+            std::string c1 = path + "/eboot.bin";
+            std::string c2 = path + "/app0/eboot.bin";
+            if (GetFileAttributesA(c1.c_str()) != INVALID_FILE_ATTRIBUTES) {
+                binary_path = c1;
+                game_dir = path;
+            } else if (GetFileAttributesA(c2.c_str()) != INVALID_FILE_ATTRIBUTES) {
+                binary_path = c2;
+                game_dir = path + "/app0";
+            } else {
+                game_dir = path;
+            }
+        } else {
+            size_t slash = path.find_last_of("\\/");
+            if (slash != std::string::npos) {
+                game_dir = path.substr(0, slash);
+            }
+        }
+
+        PROSPERO_LOG_INFO("RUNNER", "Target binary: " << binary_path);
+        PROSPERO_LOG_INFO("RUNNER", "Game root directory: " << game_dir);
+
+        // Check for param.json title metadata
+        std::string param_path = game_dir + "/sce_sys/param.json";
+        if (GetFileAttributesA(param_path.c_str()) == INVALID_FILE_ATTRIBUTES) {
+            param_path = game_dir + "/param.json";
+        }
+        if (GetFileAttributesA(param_path.c_str()) != INVALID_FILE_ATTRIBUTES) {
+            PROSPERO_LOG_INFO("RUNNER", "Detected PS5 Title Metadata (" << param_path << ")");
+        }
 
         prospero::loader::ElfLoader loader;
-        bool loaded = loader.loadFromFile(path);
+        bool loaded = loader.loadFromFile(binary_path);
         if (!loaded) {
-            PROSPERO_LOG_WARN("RUNNER", "Could not load file '" << path << "'. Falling back to internal PS5 showcase payload.");
+            PROSPERO_LOG_WARN("RUNNER", "Could not load file '" << binary_path << "'. Falling back to internal PS5 showcase payload.");
         } else {
             PROSPERO_LOG_INFO("RUNNER", "Successfully loaded ELF. Entry point: 0x" << std::hex << loader.getEntryPoint() << std::dec);
         }
@@ -218,6 +251,7 @@ int main(int argc, char* argv[]) {
 
         auto& syscalls = prospero::kernel::SyscallDispatcher::instance();
         syscalls.init();
+        syscalls.mount("/app0", game_dir);
 
         auto& modules = prospero::modules::ModuleManager::instance();
         modules.init();

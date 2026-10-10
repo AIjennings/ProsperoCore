@@ -62,6 +62,11 @@ public:
     void registerModule(std::shared_ptr<HleModule> module);
     std::shared_ptr<HleModule> getModule(const std::string& name);
 
+    template <typename T>
+    std::shared_ptr<T> getModuleAs(const std::string& name) {
+        return std::dynamic_pointer_cast<T>(getModule(name));
+    }
+
     // Resolve NID across all registered modules
     u64 callNid(nid_t nid, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6);
     bool hasNid(nid_t nid) const;

@@ -31,9 +31,13 @@ set(PROSPERO_CORE_SOURCES
     src/modules/libSceSysmodule.cpp
     src/gpu/command_processor.cpp
     src/gpu/vulkan_backend.cpp
+    src/game/game_demo.cpp
 )
 
 add_library(prospero_core STATIC ${PROSPERO_CORE_SOURCES})
+if (MSVC)
+    target_link_libraries(prospero_core PUBLIC user32 gdi32)
+endif()
 
 # CLI Executable
 add_executable(prospero_cli src/main.cpp)
@@ -42,3 +46,4 @@ target_link_libraries(prospero_cli PRIVATE prospero_core)
 # Synthetic Payload Generator Tool
 add_executable(generate_ps5_payload tests/generate_ps5_payload.cpp)
 target_link_libraries(generate_ps5_payload PRIVATE prospero_core)
+

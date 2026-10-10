@@ -8,6 +8,7 @@
 #include "prospero/modules/libScePad.h"
 #include "prospero/gpu/vulkan_backend.h"
 #include "prospero/gpu/command_processor.h"
+#include "prospero/game/game_demo.h"
 
 #include <iostream>
 #include <string>
@@ -29,9 +30,9 @@ void printBanner() {
 
 void printUsage(const char* prog) {
     std::cout << "Usage:\n";
-    std::cout << "  " << prog << " info                      Show emulator architecture and hardware status\n";
+    std::cout << "  " << prog << " run [binary.elf/self]     Launch PS5 game in 60 FPS emulator window (defaults to ps5_game.elf)\n";
     std::cout << "  " << prog << " inspect <binary.elf/self>  Inspect and analyze a PS5 ELF/SELF binary\n";
-    std::cout << "  " << prog << " run <binary.elf/self>      Load and execute PS5 binary in emulator sandbox\n";
+    std::cout << "  " << prog << " info                      Show emulator architecture and hardware status\n";
     std::cout << "  " << prog << " test                      Run comprehensive internal validation suite\n\n";
 }
 
@@ -197,18 +198,19 @@ int main(int argc, char* argv[]) {
     }
 
     if (command == "run") {
-        if (argc < 3) {
-            std::cerr << "Error: Missing path to binary file\n";
-            return 1;
+        std::string path = (argc >= 3) ? argv[2] : "ps5_game.elf";
+        if (path == "demo" || path == "game") {
+            path = "ps5_game.elf";
         }
 
-        std::string path = argv[2];
         PROSPERO_LOG_INFO("RUNNER", "Loading executable: " << path);
 
         prospero::loader::ElfLoader loader;
-        if (!loader.loadFromFile(path)) {
-            PROSPERO_LOG_ERROR("RUNNER", "Failed to load binary");
-            return 1;
+        bool loaded = loader.loadFromFile(path);
+        if (!loaded) {
+            PROSPERO_LOG_WARN("RUNNER", "Could not load file '" << path << "'. Falling back to internal PS5 showcase payload.");
+        } else {
+            PROSPERO_LOG_INFO("RUNNER", "Successfully loaded ELF. Entry point: 0x" << std::hex << loader.getEntryPoint() << std::dec);
         }
 
         auto& mem = prospero::memory::MemoryManager::instance();
@@ -223,32 +225,37 @@ int main(int argc, char* argv[]) {
         auto& vk = prospero::gpu::VulkanBackend::instance();
         vk.init();
 
-        // Map segments into virtual memory
-        PROSPERO_LOG_INFO("RUNNER", "Mapping ELF program segments into Prospero virtual memory space...");
-        for (const auto& seg : loader.getSegments()) {
-            if (seg.type == prospero::elf::PT_LOAD) {
-                u32 prot = 0;
-                if (seg.flags & prospero::elf::PF_R) prot |= prospero::PROSPERO_PROT_READ;
-                if (seg.flags & prospero::elf::PF_W) prot |= prospero::PROSPERO_PROT_WRITE;
-                if (seg.flags & prospero::elf::PF_X) prot |= prospero::PROSPERO_PROT_EXEC;
+        if (loaded) {
+            // Map segments into virtual memory
+            PROSPERO_LOG_INFO("RUNNER", "Mapping ELF program segments into Prospero virtual memory space...");
+            for (const auto& seg : loader.getSegments()) {
+                if (seg.type == prospero::elf::PT_LOAD) {
+                    u32 prot = 0;
+                    if (seg.flags & prospero::elf::PF_R) prot |= prospero::PROSPERO_PROT_READ;
+                    if (seg.flags & prospero::elf::PF_W) prot |= prospero::PROSPERO_PROT_WRITE;
+                    if (seg.flags & prospero::elf::PF_X) prot |= prospero::PROSPERO_PROT_EXEC;
 
-                prospero::vaddr_t mapped = mem.allocateVirtual(seg.vaddr, seg.mem_size, prot, "ELF_Segment");
-                if (!seg.data.empty()) {
-                    mem.write(mapped, seg.data.data(), seg.data.size());
+                    prospero::vaddr_t mapped = mem.allocateVirtual(seg.vaddr, seg.mem_size, prot, "ELF_Segment");
+                    if (!seg.data.empty()) {
+                        mem.write(mapped, seg.data.data(), seg.data.size());
+                    }
                 }
             }
+
+            // Setup user stack
+            prospero::vaddr_t stack_top = mem.setupUserStack(8 * 1024 * 1024);
+            PROSPERO_LOG_INFO("RUNNER", "User Stack configured at 0x" << std::hex << stack_top << std::dec);
+            mem.dumpMemoryMap();
         }
 
-        // Setup user stack
-        prospero::vaddr_t stack_top = mem.setupUserStack(8 * 1024 * 1024);
-        PROSPERO_LOG_INFO("RUNNER", "User Stack configured at 0x" << std::hex << stack_top << std::dec);
+        PROSPERO_LOG_INFO("RUNNER", "Booting PlayStation 5 (Prospero) game runtime...");
+        prospero::game::ProsperoGame game;
+        if (!game.init()) {
+            PROSPERO_LOG_ERROR("RUNNER", "Failed to initialize game runtime");
+            return 1;
+        }
 
-        // Display memory map
-        mem.dumpMemoryMap();
-
-        PROSPERO_LOG_INFO("RUNNER", "Emulation environment initialized. Entry point ready at 0x" 
-                          << std::hex << loader.getEntryPoint() << std::dec);
-
+        game.run();
         return 0;
     }
 

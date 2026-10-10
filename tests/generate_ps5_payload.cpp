@@ -7,7 +7,7 @@
 using namespace prospero;
 
 int main(int argc, char* argv[]) {
-    const char* out_filename = (argc > 1) ? argv[1] : "sample_ps5_payload.elf";
+    const char* out_filename = (argc > 1) ? argv[1] : "ps5_game.elf";
 
     std::cout << "Generating synthetic PS5 ELF binary: " << out_filename << "...\n";
 
@@ -31,14 +31,18 @@ int main(int argc, char* argv[]) {
     ehdr.e_phnum = 3; // PT_LOAD (code), PT_DYNAMIC, PT_SCE_DYNLIBDATA
 
     // String table for dynamic libraries
-    std::string strtab = "\0libkernel.sprx\0libSceVideoOut.sprx\0";
+    std::string strtab = "\0libkernel.sprx\0libSceVideoOut.sprx\0libScePad.sprx\0libSceSysmodule.sprx\0";
     u64 libkernel_offset = 1;
     u64 libvideo_offset = 16;
+    u64 libpad_offset = 33;
+    u64 libsysmod_offset = 48;
 
     // Dynamic tags
     std::vector<prospero::elf::Elf64_Dyn> dyns = {
         { prospero::elf::DT_SCE_NEEDED_MODULE, { libkernel_offset } },
         { prospero::elf::DT_SCE_NEEDED_MODULE, { libvideo_offset } },
+        { prospero::elf::DT_SCE_NEEDED_MODULE, { libpad_offset } },
+        { prospero::elf::DT_SCE_NEEDED_MODULE, { libsysmod_offset } },
         { prospero::elf::DT_SCE_STRTAB, { 0 } },
         { prospero::elf::DT_SCE_STRSZ, { strtab.size() } },
         { prospero::elf::DT_NULL, { 0 } }

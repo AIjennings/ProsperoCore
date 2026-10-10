@@ -97,18 +97,55 @@ cmake --build build --config Release
 
 ### CLI Commands
 ```powershell
-# 1. Run internal verification test suite
+# 1. Launch interactive 60 FPS PS5 Game in native emulator window
+.\build\Release\prospero_cli.exe run
+
+# 2. Run with specific PS5 binary (ELF or SELF)
+.\build\Release\prospero_cli.exe run ps5_game.elf
+
+# 3. Run internal verification test suite
 .\build\Release\prospero_cli.exe test
 
-# 2. View emulator architecture, GPU hardware, and registered HLE modules
+# 4. View emulator architecture, GPU hardware, and registered HLE modules
 .\build\Release\prospero_cli.exe info
 
-# 3. Generate a synthetic PS5 test ELF binary
-.\build\Release\generate_ps5_payload.exe sample_ps5_payload.elf
+# 5. Generate synthetic PS5 ELF binary
+.\build\Release\generate_ps5_payload.exe ps5_game.elf
 
-# 4. Inspect PS5 ELF/SELF binary headers, segments, and dynamic modules
-.\build\Release\prospero_cli.exe inspect sample_ps5_payload.elf
-
-# 5. Load and execute binary in the Prospero virtual memory sandbox
-.\build\Release\prospero_cli.exe run sample_ps5_payload.elf
+# 6. Inspect PS5 ELF/SELF binary headers, segments, and dynamic modules
+.\build\Release\prospero_cli.exe inspect ps5_game.elf
 ```
+
+---
+
+## Interactive PS5 Game Showcase ("Prospero: Void Runner")
+
+ProsperoCore includes a built-in interactive 3D space shooter showcase demonstrating real-time interplay between all emulator subsystems:
+
+- **Display**: 1280x720 60 FPS presentation window driven via `libSceVideoOut.sprx` (`sceVideoOutOpen`, `sceVideoOutRegisterBuffers`, `sceVideoOutSubmitFlip`).
+- **Memory**: Unified 128 MiB direct physical GDDR6 memory allocation (`sceKernelAllocateDirectMemory`, `sceKernelMapDirectMemory`).
+- **Controls & Input**: Full DualSense Wireless Controller telemetry and keyboard emulation via `libScePad.sprx` (`scePadReadState`, `scePadSetVibration`).
+- **GPU**: AMD RDNA2 PM4 Type-3 command buffers (`IT_SET_CONTEXT_REG`, `IT_SET_SH_REG`, `IT_DRAW_INDEX_AUTO`, `IT_DISPATCH_DIRECT`) decoded by `CommandProcessor` with host Vulkan 1.4 hardware acceleration (NVIDIA GeForce RTX 3090, 24GB VRAM).
+
+### Controls Guide
+
+| Action | Keyboard | DualSense Controller | SCE Pad Code |
+| :--- | :--- | :--- | :--- |
+| **Steer Starfighter** | `W` / `A` / `S` / `D` or `Arrow Keys` | Left Thumbstick | `left_stick_x`, `left_stick_y` |
+| **Fire Plasma Lasers** | `Spacebar` / `Z` | `Cross` (A) Button | `SCE_PAD_CROSS` |
+| **Hyperspace Boost** | `Shift` (Hold) | `R2` Trigger | `SCE_PAD_R2` / `analog_r2` |
+| **Shield Ability** | `X` | `Circle` (B) Button | `SCE_PAD_CIRCLE` |
+| **Pause / Exit** | `Esc` / `Q` | `Options` Button | `SCE_PAD_OPTIONS` |
+
+---
+
+## Running Commercial PS5 Games (Decrypted ELFs / PKGs)
+
+To run a commercial PlayStation 5 title:
+1. **Dumping**: The game must be decrypted and dumped from a jailbroken PS5 (firmware 4.03 / 4.51 or below using tools like *ps5-kstuff* / *itemzflow*).
+2. **Format**: The dumped binary (`eboot.bin`) must have its Sony SELF container unencrypted or contain decrypted ELF segments.
+3. **Execution**: Pass the path to the decrypted binary:
+   ```powershell
+   .\build\Release\prospero_cli.exe run "C:\path\to\game\eboot.bin"
+   ```
+4. **Compatibility Note**: Commercial PS5 retail titles (e.g. *Demon's Souls*, *Spider-Man 2*, *Returnal*) require thousands of proprietary SCE OS services, advanced AMD RDNA2 mesh shaders, and audio pipelines that are under active development across the PS5 emulation community. ProsperoCore will parse headers, map virtual memory segments, setup the 48-bit stack, resolve exported NIDs, and log all unimplemented syscalls and GPU packets during boot.

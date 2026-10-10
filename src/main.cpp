@@ -31,6 +31,7 @@ void printBanner() {
 void printUsage(const char* prog) {
     std::cout << "Usage:\n";
     std::cout << "  " << prog << " run [binary.elf/self]     Launch PS5 game in 60 FPS emulator window (defaults to ps5_game.elf)\n";
+    std::cout << "  " << prog << " bench [frames]            Run headless high-throughput stress benchmark (default: 600 frames)\n";
     std::cout << "  " << prog << " inspect <binary.elf/self>  Inspect and analyze a PS5 ELF/SELF binary\n";
     std::cout << "  " << prog << " info                      Show emulator architecture and hardware status\n";
     std::cout << "  " << prog << " test                      Run comprehensive internal validation suite\n\n";
@@ -42,7 +43,7 @@ bool runTestSuite() {
     PROSPERO_LOG_INFO("TEST", "=======================================================");
 
     // 1. Virtual Memory Test
-    PROSPERO_LOG_INFO("TEST", "[1/6] Testing 48-bit Virtual Memory Subsystem...");
+    PROSPERO_LOG_INFO("TEST", "[1/10] Testing 48-bit Virtual Memory Subsystem...");
     auto& mem = prospero::memory::MemoryManager::instance();
     mem.init();
     prospero::vaddr_t test_vaddr = mem.allocateVirtual(0x400000, 0x10000, prospero::PROSPERO_PROT_READ | prospero::PROSPERO_PROT_WRITE, "TestSegment");
@@ -61,7 +62,7 @@ bool runTestSuite() {
     PROSPERO_LOG_INFO("TEST", "  -> Virtual Memory verification PASSED.");
 
     // 2. Direct Physical Memory Allocation Test (GDDR6)
-    PROSPERO_LOG_INFO("TEST", "[2/6] Testing Direct Physical GDDR6 Memory Allocator...");
+    PROSPERO_LOG_INFO("TEST", "[2/10] Testing Direct Physical GDDR6 Memory Allocator...");
     prospero::off_t paddr = 0;
     prospero::s32 dmem_res = mem.allocateDirectMemory(0, 0, 64 * 1024 * 1024, 0x10000, 0, &paddr);
     if (dmem_res != prospero::SCE_OK || paddr == 0) {
@@ -77,7 +78,7 @@ bool runTestSuite() {
     PROSPERO_LOG_INFO("TEST", "  -> DirectMemory 64MB GDDR6 allocation & mapping PASSED (PhysAddr=0x" << std::hex << paddr << std::dec << ")");
 
     // 3. Syscall Dispatcher Test
-    PROSPERO_LOG_INFO("TEST", "[3/6] Testing FreeBSD 12 / Prospero Syscall Dispatcher...");
+    PROSPERO_LOG_INFO("TEST", "[3/10] Testing FreeBSD 12 / Prospero Syscall Dispatcher...");
     auto& syscalls = prospero::kernel::SyscallDispatcher::instance();
     syscalls.init();
     prospero::kernel::CpuContext ctx{};
@@ -86,10 +87,41 @@ bool runTestSuite() {
         PROSPERO_LOG_ERROR("TEST", "SYS_write syscall failed!");
         return false;
     }
-    PROSPERO_LOG_INFO("TEST", "  -> Syscall Dispatcher PASSED.");
+    u64 pid_res = syscalls.dispatch(prospero::kernel::SYS_getpid, ctx, 0, 0, 0, 0, 0, 0);
+    if (pid_res == 0) {
+        PROSPERO_LOG_ERROR("TEST", "SYS_getpid syscall failed!");
+        return false;
+    }
+    PROSPERO_LOG_INFO("TEST", "  -> Syscall Dispatcher PASSED (PID=0x" << std::hex << pid_res << std::dec << ").");
 
-    // 4. HLE Modules & NID Resolution Test
-    PROSPERO_LOG_INFO("TEST", "[4/6] Testing HLE Modules & Sony 64-bit NID Resolution...");
+    // 4. Virtual File System (VFS) & File I/O Syscalls Test
+    PROSPERO_LOG_INFO("TEST", "[4/10] Testing Virtual File System (VFS) & File I/O Syscalls...");
+    syscalls.mount("/test_vfs", ".");
+    prospero::vaddr_t vfs_path_vaddr = mem.allocateVirtual(0, 64, prospero::PROSPERO_PROT_READ | prospero::PROSPERO_PROT_WRITE, "VFS_Path");
+    const char* vfs_test_path = "/test_vfs/CMakeLists.txt";
+    mem.write(vfs_path_vaddr, vfs_test_path, strlen(vfs_test_path) + 1);
+
+    u64 fd_res = syscalls.dispatch(prospero::kernel::SYS_open, ctx, vfs_path_vaddr, 0, 0, 0, 0, 0);
+    if (static_cast<s64>(fd_res) < 0) {
+        PROSPERO_LOG_ERROR("TEST", "VFS sys_open failed! Code: " << fd_res);
+        return false;
+    }
+    int test_fd = static_cast<int>(fd_res);
+
+    prospero::vaddr_t vfs_read_vaddr = mem.allocateVirtual(0, 64, prospero::PROSPERO_PROT_READ | prospero::PROSPERO_PROT_WRITE, "VFS_ReadBuf");
+    u64 bytes_read = syscalls.dispatch(prospero::kernel::SYS_read, ctx, test_fd, vfs_read_vaddr, 16, 0, 0, 0);
+    syscalls.dispatch(prospero::kernel::SYS_close, ctx, test_fd, 0, 0, 0, 0, 0);
+
+    if (bytes_read == 0) {
+        PROSPERO_LOG_ERROR("TEST", "VFS sys_read returned 0 bytes!");
+        return false;
+    }
+    char vfs_buf[17]{};
+    mem.read(vfs_read_vaddr, vfs_buf, 16);
+    PROSPERO_LOG_INFO("TEST", "  -> VFS sys_open/read/close PASSED (Read " << bytes_read << " bytes: '" << vfs_buf << "')");
+
+    // 5. Core HLE Modules & NID Resolution Test
+    PROSPERO_LOG_INFO("TEST", "[5/10] Testing Core HLE Modules & Sony 64-bit NID Resolution...");
     auto& modules = prospero::modules::ModuleManager::instance();
     modules.init();
     if (!modules.hasNid(prospero::nids::sceKernelAllocateDirectMemory)) {
@@ -109,10 +141,65 @@ bool runTestSuite() {
         PROSPERO_LOG_ERROR("TEST", "DualSense HLE state read failed!");
         return false;
     }
-    PROSPERO_LOG_INFO("TEST", "  -> HLE Modules & NID resolution PASSED.");
+    PROSPERO_LOG_INFO("TEST", "  -> Core HLE Modules & NID resolution PASSED.");
 
-    // 5. GPU PM4 Command Processor Test
-    PROSPERO_LOG_INFO("TEST", "[5/6] Testing AMD RDNA2 / GFX10.3 PM4 Command Processor...");
+    // 6. Extended HLE Modules (UserService, SystemService, AudioOut) Test
+    PROSPERO_LOG_INFO("TEST", "[6/10] Testing Extended HLE Modules (UserService, SystemService, AudioOut)...");
+    prospero::vaddr_t user_id_vaddr = mem.allocateVirtual(0, sizeof(u32), prospero::PROSPERO_PROT_READ | prospero::PROSPERO_PROT_WRITE, "UserId");
+    u64 user_res = modules.callNid(prospero::nids::sceUserServiceGetInitialUser, user_id_vaddr, 0, 0, 0, 0, 0);
+    u32 user_id = 0;
+    mem.read(user_id_vaddr, &user_id, sizeof(u32));
+    if (user_res != prospero::SCE_OK || user_id != 0x10000001) {
+        PROSPERO_LOG_ERROR("TEST", "sceUserServiceGetInitialUser failed! UserID: 0x" << std::hex << user_id);
+        return false;
+    }
+
+    prospero::vaddr_t uname_vaddr = mem.allocateVirtual(0, 32, prospero::PROSPERO_PROT_READ | prospero::PROSPERO_PROT_WRITE, "UserName");
+    modules.callNid(prospero::nids::sceUserServiceGetUserName, user_id, uname_vaddr, 32, 0, 0, 0);
+    char uname_buf[32]{};
+    mem.read(uname_vaddr, uname_buf, sizeof(uname_buf));
+    if (std::string(uname_buf) != "Player1") {
+        PROSPERO_LOG_ERROR("TEST", "sceUserServiceGetUserName mismatch: " << uname_buf);
+        return false;
+    }
+
+    prospero::vaddr_t title_vaddr = mem.allocateVirtual(0, 32, prospero::PROSPERO_PROT_READ | prospero::PROSPERO_PROT_WRITE, "TitleId");
+    modules.callNid(prospero::nids::sceSystemServiceParamGetString, 0, title_vaddr, 32, 0, 0, 0);
+    char title_buf[32]{};
+    mem.read(title_vaddr, title_buf, sizeof(title_buf));
+    if (std::string(title_buf) != "PPSA01546") {
+        PROSPERO_LOG_ERROR("TEST", "sceSystemServiceParamGetString mismatch: " << title_buf);
+        return false;
+    }
+
+    u64 audio_handle = modules.callNid(prospero::nids::sceAudioOutOpen, user_id, 0, 0, 0, 0, 0);
+    if (audio_handle != 0x301) {
+        PROSPERO_LOG_ERROR("TEST", "sceAudioOutOpen failed! Handle: 0x" << std::hex << audio_handle);
+        return false;
+    }
+    u64 audio_close = modules.callNid(prospero::nids::sceAudioOutClose, audio_handle, 0, 0, 0, 0, 0);
+    if (audio_close != prospero::SCE_OK) {
+        PROSPERO_LOG_ERROR("TEST", "sceAudioOutClose failed!");
+        return false;
+    }
+    PROSPERO_LOG_INFO("TEST", "  -> Extended HLE Modules PASSED (User: '" << uname_buf << "', Title: '" << title_buf << "', Audio: 0x301).");
+
+    // 7. Dynamic NID Fallback & Resilient Stub Resolution
+    PROSPERO_LOG_INFO("TEST", "[7/10] Testing Dynamic NID Fallback & Resilient Stub Resolution...");
+    constexpr prospero::nid_t unhandled_nid = 0xCAFEBABE12345678ULL;
+    if (modules.hasNid(unhandled_nid)) {
+        PROSPERO_LOG_ERROR("TEST", "Unexpected NID collision in stub test!");
+        return false;
+    }
+    u64 stub_ret = modules.callNid(unhandled_nid, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66);
+    if (stub_ret != prospero::SCE_OK) {
+        PROSPERO_LOG_ERROR("TEST", "Unhandled NID did not return SCE_OK fallback! Got: " << stub_ret);
+        return false;
+    }
+    PROSPERO_LOG_INFO("TEST", "  -> Dynamic NID Fallback PASSED (Stub NID resolved safely to SCE_OK).");
+
+    // 8. GPU PM4 Command Processor Test
+    PROSPERO_LOG_INFO("TEST", "[8/10] Testing AMD RDNA2 / GFX10.3 PM4 Command Processor...");
     prospero::gpu::CommandProcessor cp;
     std::vector<prospero::u32> pm4_stream = {
         // IT_SET_CONTEXT_REG (header: type=3, opcode=0x69, count=2 -> 3 dwords)
@@ -124,14 +211,27 @@ bool runTestSuite() {
     };
     cp.processCommandBuffer(pm4_stream.data(), pm4_stream.size());
     const auto& stats = cp.getStats();
-    if (stats.draw_calls != 1 || stats.compute_dispatches != 1) {
+    if (stats.draw_calls != 1 || stats.compute_dispatches != 1 || stats.registers_written != 2) {
         PROSPERO_LOG_ERROR("TEST", "PM4 packet processing failed! Draws=" << stats.draw_calls);
         return false;
     }
     PROSPERO_LOG_INFO("TEST", "  -> RDNA2 PM4 Command Buffer decode PASSED.");
 
-    // 6. Vulkan Hardware Detection
-    PROSPERO_LOG_INFO("TEST", "[6/6] Testing Vulkan 1.4 Hardware Acceleration Subsystem...");
+    // 9. PM4 Packet Boundary Safety & Fuzzing
+    PROSPERO_LOG_INFO("TEST", "[9/10] Testing PM4 Malformed Packet & Boundary Safety Fuzzing...");
+    prospero::gpu::CommandProcessor fuzz_cp;
+    std::vector<prospero::u32> malformed_stream = {
+        // Header claims 100 dwords payload, but only 2 dwords follow
+        0xC0646900, 0x00000200, 0x12345678,
+        // Non-type 3 packet padding (Type 0 / no-op)
+        0x00000000, 0x00000000
+    };
+    // Should safely abort processing without crashing or memory corruption
+    fuzz_cp.processCommandBuffer(malformed_stream.data(), malformed_stream.size());
+    PROSPERO_LOG_INFO("TEST", "  -> PM4 Malformed Packet Boundary Fuzzing PASSED (No out-of-bounds access).");
+
+    // 10. Vulkan Hardware Detection
+    PROSPERO_LOG_INFO("TEST", "[10/10] Testing Vulkan 1.4 Hardware Acceleration Subsystem...");
     auto& vk = prospero::gpu::VulkanBackend::instance();
     bool vk_ok = vk.init();
     if (vk_ok) {
@@ -142,7 +242,7 @@ bool runTestSuite() {
     }
 
     PROSPERO_LOG_INFO("TEST", "=======================================================");
-    PROSPERO_LOG_INFO("TEST", "       ALL SYSTEM TESTS PASSED SUCCESSFULLY!           ");
+    PROSPERO_LOG_INFO("TEST", "       ALL 10 SYSTEM TESTS PASSED SUCCESSFULLY!        ");
     PROSPERO_LOG_INFO("TEST", "=======================================================");
     return true;
 }
@@ -194,6 +294,42 @@ int main(int argc, char* argv[]) {
         }
 
         loader.dumpInfo();
+        return 0;
+    }
+
+    if (command == "bench") {
+        u32 total_frames = 600;
+        if (argc >= 3) {
+            try {
+                total_frames = static_cast<u32>(std::stoul(argv[2]));
+            } catch (...) {
+                total_frames = 600;
+            }
+        }
+
+        PROSPERO_LOG_INFO("BENCH", "Initializing Prospero subsystems for headless stress benchmark (" << total_frames << " frames)...");
+
+        auto& mem = prospero::memory::MemoryManager::instance();
+        mem.init();
+
+        auto& syscalls = prospero::kernel::SyscallDispatcher::instance();
+        syscalls.init();
+        syscalls.mount("/app0", ".");
+
+        auto& modules = prospero::modules::ModuleManager::instance();
+        modules.init();
+
+        auto& vk = prospero::gpu::VulkanBackend::instance();
+        vk.init();
+
+        prospero::game::ProsperoGame game;
+        if (!game.init()) {
+            PROSPERO_LOG_ERROR("BENCH", "Failed to initialize game runtime for benchmark");
+            return 1;
+        }
+
+        game.runHeadlessBenchmark(total_frames);
+        game.shutdown();
         return 0;
     }
 

@@ -62,6 +62,7 @@ public:
 
     bool init();
     void run();
+    void runHeadlessBenchmark(u32 total_frames = 600);
     void shutdown();
 
 private:

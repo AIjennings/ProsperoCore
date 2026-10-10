@@ -9,7 +9,7 @@ LibSceSystemService::LibSceSystemService() : HleModule("libSceSystemService.sprx
 
 bool LibSceSystemService::init() {
     // sceSystemServiceGetPowerTick (0x7E3BC3E1AA549001)
-    registerExport(0x7E3BC3E1AA549001ULL, "sceSystemServiceGetPowerTick",
+    registerExport(nids::sceSystemServiceGetPowerTick, "sceSystemServiceGetPowerTick",
         [](u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) -> u64 {
             static auto start = std::chrono::steady_clock::now();
             auto now = std::chrono::steady_clock::now();
@@ -17,14 +17,14 @@ bool LibSceSystemService::init() {
         });
 
     // sceSystemServiceHideSplashScreen (0x8C78FA6EEFEFCE01)
-    registerExport(0x8C78FA6EEFEFCE01ULL, "sceSystemServiceHideSplashScreen",
+    registerExport(nids::sceSystemServiceHideSplashScreen, "sceSystemServiceHideSplashScreen",
         [](u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) -> u64 {
             PROSPERO_LOG_INFO("HLE_SYS", "sceSystemServiceHideSplashScreen called -> Hiding PS5 boot splash");
             return SCE_OK;
         });
 
     // sceSystemServiceParamGetInt (0x367A43B1D56BE901)
-    registerExport(0x367A43B1D56BE901ULL, "sceSystemServiceParamGetInt",
+    registerExport(nids::sceSystemServiceParamGetInt, "sceSystemServiceParamGetInt",
         [](u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) -> u64 {
             s32 param_id = static_cast<s32>(a1);
             vaddr_t out_val = a2;
@@ -38,7 +38,7 @@ bool LibSceSystemService::init() {
         });
 
     // sceSystemServiceParamGetString (0x8F56708BE09AC401)
-    registerExport(0x8F56708BE09AC401ULL, "sceSystemServiceParamGetString",
+    registerExport(nids::sceSystemServiceParamGetString, "sceSystemServiceParamGetString",
         [](u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) -> u64 {
             s32 param_id = static_cast<s32>(a1);
             vaddr_t out_buf = a2;

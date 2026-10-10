@@ -9,14 +9,14 @@ LibSceUserService::LibSceUserService() : HleModule("libSceUserService.sprx") {}
 
 bool LibSceUserService::init() {
     // sceUserServiceInitialize (0x981C5C2A6B3D1401)
-    registerExport(0x981C5C2A6B3D1401ULL, "sceUserServiceInitialize",
+    registerExport(nids::sceUserServiceInitialize, "sceUserServiceInitialize",
         [](u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) -> u64 {
             PROSPERO_LOG_INFO("HLE_USER", "sceUserServiceInitialize called -> SCE_OK");
             return SCE_OK;
         });
 
     // sceUserServiceGetInitialUser (0x486B2F995D71C801)
-    registerExport(0x486B2F995D71C801ULL, "sceUserServiceGetInitialUser",
+    registerExport(nids::sceUserServiceGetInitialUser, "sceUserServiceGetInitialUser",
         [](u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) -> u64 {
             vaddr_t out_user_id = a1;
             u32 primary_user_id = 0x10000001; // Primary active user ID
@@ -28,7 +28,7 @@ bool LibSceUserService::init() {
         });
 
     // sceUserServiceGetUserName (0x5E518EAC8BE10401)
-    registerExport(0x5E518EAC8BE10401ULL, "sceUserServiceGetUserName",
+    registerExport(nids::sceUserServiceGetUserName, "sceUserServiceGetUserName",
         [](u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) -> u64 {
             u32 user_id = static_cast<u32>(a1);
             vaddr_t out_name = a2;

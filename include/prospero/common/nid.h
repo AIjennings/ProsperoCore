@@ -50,6 +50,17 @@ namespace nids {
     constexpr nid_t sceAudioOutOutput                   = 0x7B9E3A56D089125CULL;
     constexpr nid_t sceAudioOutClose                    = 0x9C34FA6180E34BC1ULL;
 
+    // libSceUserService
+    constexpr nid_t sceUserServiceInitialize            = 0x981C5C2A6B3D1401ULL;
+    constexpr nid_t sceUserServiceGetInitialUser        = 0x486B2F995D71C801ULL;
+    constexpr nid_t sceUserServiceGetUserName           = 0x5E518EAC8BE10401ULL;
+
+    // libSceSystemService
+    constexpr nid_t sceSystemServiceGetPowerTick        = 0x7E3BC3E1AA549001ULL;
+    constexpr nid_t sceSystemServiceHideSplashScreen    = 0x8C78FA6EEFEFCE01ULL;
+    constexpr nid_t sceSystemServiceParamGetInt         = 0x367A43B1D56BE901ULL;
+    constexpr nid_t sceSystemServiceParamGetString      = 0x8F56708BE09AC401ULL;
+
     // libSceAgc (PS5 Next-Gen Graphics API)
     constexpr nid_t sceAgcCreateContext                 = 0x89AC34B6E1F0934AULL;
     constexpr nid_t sceAgcSubmitCommandBuffer           = 0x47B012CD8E5F90ABULL;
@@ -124,6 +135,15 @@ private:
         registerNid(nids::sceAudioOutOpen, "sceAudioOutOpen", "libSceAudioOut.sprx");
         registerNid(nids::sceAudioOutOutput, "sceAudioOutOutput", "libSceAudioOut.sprx");
         registerNid(nids::sceAudioOutClose, "sceAudioOutClose", "libSceAudioOut.sprx");
+
+        registerNid(nids::sceUserServiceInitialize, "sceUserServiceInitialize", "libSceUserService.sprx");
+        registerNid(nids::sceUserServiceGetInitialUser, "sceUserServiceGetInitialUser", "libSceUserService.sprx");
+        registerNid(nids::sceUserServiceGetUserName, "sceUserServiceGetUserName", "libSceUserService.sprx");
+
+        registerNid(nids::sceSystemServiceGetPowerTick, "sceSystemServiceGetPowerTick", "libSceSystemService.sprx");
+        registerNid(nids::sceSystemServiceHideSplashScreen, "sceSystemServiceHideSplashScreen", "libSceSystemService.sprx");
+        registerNid(nids::sceSystemServiceParamGetInt, "sceSystemServiceParamGetInt", "libSceSystemService.sprx");
+        registerNid(nids::sceSystemServiceParamGetString, "sceSystemServiceParamGetString", "libSceSystemService.sprx");
 
         registerNid(nids::sceAgcCreateContext, "sceAgcCreateContext", "libSceAgc.sprx");
         registerNid(nids::sceAgcSubmitCommandBuffer, "sceAgcSubmitCommandBuffer", "libSceAgc.sprx");

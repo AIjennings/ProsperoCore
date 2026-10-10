@@ -1,0 +1,10 @@
+build/
+bin/
+*.elf
+*.self
+*.exe
+*.obj
+*.lib
+*.pdb
+*.ilk
+.vs/

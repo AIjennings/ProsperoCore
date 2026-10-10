@@ -1,0 +1,26 @@
+{
+  "titleId": "PPSA09999",
+  "titleName": "Prospero: Void Runner (PS5 Showcase)",
+  "version": "01.00",
+  "contentId": "UP0001-PPSA09999_00-PROSPEROVOIDRUN0",
+  "targetFirmware": "0x01000000",
+  "applicationType": "GAME",
+  "resolution": "3840x2160",
+  "targetFps": 60,
+  "hdr": 1,
+  "dualsense": {
+    "adaptiveTriggers": true,
+    "hapticFeedback": true,
+    "speaker": true
+  },
+  "modules": [
+    "libkernel.sprx",
+    "libSceVideoOut.sprx",
+    "libScePad.sprx",
+    "libSceSysmodule.sprx",
+    "libSceUserService.sprx",
+    "libSceSystemService.sprx",
+    "libSceAudioOut.sprx",
+    "libSceAgc.sprx"
+  ]
+}
